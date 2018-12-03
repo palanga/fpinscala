@@ -1,18 +1,27 @@
 package fpinscala.errorhandling
 
 
-import scala.{Option => _, Some => _, Either => _, _} // hide std library `Option`, `Some` and `Either`, since we are writing our own in this chapter
+import scala.{Either => _, Option => _, Some => _} // hide std library `Option`, `Some` and `Either`, since we are
+// writing our own in this chapter
 
 sealed trait Option[+A] {
-  def map[B](f: A => B): Option[B] = ???
 
-  def getOrElse[B>:A](default: => B): B = ???
+  def map[B](f: A => B): Option[B] = this match {
+    case Some(get) => Some(f(get))
+    case None => None
+  }
 
-  def flatMap[B](f: A => Option[B]): Option[B] = ???
+  def getOrElse[B >: A](default: => B): B = this match {
+    case Some(get) => get
+    case None => default
+  }
 
-  def orElse[B>:A](ob: => Option[B]): Option[B] = ???
+  def flatMap[B](f: A => Option[B]): Option[B] = this map f getOrElse None
 
-  def filter(f: A => Boolean): Option[A] = ???
+  def orElse[B >: A](ob: => Option[B]): Option[B] = this map (Some(_)) getOrElse ob
+
+  def filter(f: A => Boolean): Option[A] = this flatMap (v => if (f(v)) Some(v) else None)
+
 }
 case class Some[+A](get: A) extends Option[A]
 case object None extends Option[Nothing]
@@ -38,11 +47,30 @@ object Option {
   def mean(xs: Seq[Double]): Option[Double] =
     if (xs.isEmpty) None
     else Some(xs.sum / xs.length)
-  def variance(xs: Seq[Double]): Option[Double] = ???
 
-  def map2[A,B,C](a: Option[A], b: Option[B])(f: (A, B) => C): Option[C] = ???
+  def variance(xs: Seq[Double]): Option[Double] = mean(xs) flatMap (m => mean(xs map (x => math.pow(x - m, 2))))
 
-  def sequence[A](a: List[Option[A]]): Option[List[A]] = ???
+  def lift2[A, B, C](oa: Option[A], ob: Option[B])(f: (A, B) => C): Option[C] = for {
+    a <- oa
+    b <- ob
+  } yield f(a, b)
 
-  def traverse[A, B](a: List[A])(f: A => Option[B]): Option[List[B]] = ???
+  def sequence[A](as: List[Option[A]]): Option[List[A]] = as match {
+    case Nil => Some(Nil)
+    case x :: xs => x flatMap (xx => sequence(xs) map (l => xx :: l))
+  }
+
+  def sequenceWithFoldRight[A](as: List[Option[A]]): Option[List[A]] =
+    as.foldRight[Option[List[A]]](Some(Nil))((x,y) => map2(x,y)(_ :: _))
+
+  def sequenceWithTraverse[A](as: List[Option[A]]): Option[List[A]] = traverse(as)(x => x)
+
+  def traverse[A, B](as: List[A])(f: A => Option[B]): Option[List[B]] = as match {
+    case Nil => Some(Nil)
+    case h :: t => lift2(f(h), traverse(t)(f))((b: B, bs: List[B]) => b :: bs)
+  }
+
+  def traverseWithFoldRight[A, B](as: List[A])(f: A => Option[B]): Option[List[B]] =
+    as.foldRight[Option[List[B]]](Some(Nil))((a, obs) => lift2(f(a), obs)(_ :: _))
+
 }
